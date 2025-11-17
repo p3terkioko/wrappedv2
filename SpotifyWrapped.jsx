@@ -11,6 +11,7 @@ import {
   Calendar,
   Sparkles,
   Play,
+  Pause,
   ChevronRight,
   Volume2,
   VolumeX
@@ -24,17 +25,56 @@ function AudioManager() {
 
   // Initialize audio with MP3 file
   useEffect(() => {
-    audioRef.current = new Audio('./jazz-music-436634.mp3');
-    audioRef.current.loop = true;
-    audioRef.current.volume = 0.3;
+    const initializeAudio = async () => {
+      try {
+        // Try different path formats for different deployment environments
+        const audioSources = [
+          '/jazz-music-436634.mp3',
+          './jazz-music-436634.mp3',
+          'jazz-music-436634.mp3'
+        ];
+        
+        let audioLoaded = false;
+        
+        for (const src of audioSources) {
+          try {
+            audioRef.current = new Audio(src);
+            audioRef.current.loop = true;
+            audioRef.current.volume = 0.3;
+            audioRef.current.preload = 'auto';
+            
+            // Test if the audio can load
+            await new Promise((resolve, reject) => {
+              audioRef.current.oncanplay = resolve;
+              audioRef.current.onerror = reject;
+              audioRef.current.load();
+            });
+            
+            audioLoaded = true;
+            break;
+          } catch (err) {
+            console.log(`Failed to load audio from ${src}:`, err);
+          }
+        }
+        
+        if (audioLoaded) {
+          // Auto-start music after 2 seconds
+          const timer = setTimeout(() => {
+            playMusic();
+          }, 2000);
+          
+          return () => clearTimeout(timer);
+        } else {
+          console.log('All audio sources failed, music will not be available');
+        }
+      } catch (error) {
+        console.log('Audio initialization failed:', error);
+      }
+    };
     
-    // Auto-start music after 2 seconds
-    const timer = setTimeout(() => {
-      playMusic();
-    }, 2000);
+    initializeAudio();
 
     return () => {
-      clearTimeout(timer);
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -48,7 +88,9 @@ function AudioManager() {
         await audioRef.current.play();
         setIsPlaying(true);
       } catch (error) {
-        console.log('Audio play failed:', error);
+        console.log('Audio play failed (may require user interaction):', error);
+        // Audio play failed, likely due to browser autoplay policy
+        // The user will need to click the play button manually
       }
     }
   };
@@ -73,6 +115,15 @@ function AudioManager() {
       animate={{ opacity: 1, x: 0 }}
       className="fixed top-4 right-4 z-50 flex items-center space-x-2 bg-black/30 backdrop-blur-md rounded-full px-4 py-2"
     >
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={isPlaying ? stopMusic : playMusic}
+        className="text-white/70 hover:text-white transition-colors"
+      >
+        {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+      </motion.button>
+      
       <motion.button
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
