@@ -827,31 +827,39 @@ function TotalTracksSlide({ totalTracks, onNext }) {
   }, [playRevealSound]);
 
   useEffect(() => {
-    if (showNumber && totalTracks > 0) {
-      const duration = 2000;
-      const steps = 50;
-      let current = 0;
-      let step = 0;
+    if (showNumber && totalTracks && totalTracks > 0) {
+      const duration = 1500;
+      let startTime;
+      let animationFrame;
 
-      const counter = setInterval(() => {
-        step++;
-        current = Math.round((step / steps) * totalTracks);
+      const animate = (timestamp) => {
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        const progress = Math.min(elapsed / duration, 1);
         
-        if (step >= steps) {
-          setCurrentCount(totalTracks);
-          clearInterval(counter);
+        // Ease out cubic for smooth deceleration
+        const easedProgress = 1 - Math.pow(1 - progress, 3);
+        
+        const current = Math.round(easedProgress * totalTracks);
+        setCurrentCount(current);
+        
+        if (progress < 1) {
+          animationFrame = requestAnimationFrame(animate);
         } else {
-          setCurrentCount(current);
-          // Play counter sound every few increments
-          if (step % 5 === 0) {
-            playCounterSound();
-          }
+          setCurrentCount(totalTracks);
         }
-      }, duration / steps);
+      };
 
-      return () => clearInterval(counter);
+      animationFrame = requestAnimationFrame(animate);
+      return () => {
+        if (animationFrame) {
+          cancelAnimationFrame(animationFrame);
+        }
+      };
+    } else if (showNumber && (!totalTracks || totalTracks === 0)) {
+      setCurrentCount(0);
     }
-  }, [showNumber, totalTracks, playCounterSound]);
+  }, [showNumber, totalTracks]);
 
   return (
     <motion.div
@@ -908,6 +916,11 @@ function TotalTracksSlide({ totalTracks, onNext }) {
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* Debug display */}
+      <div className="text-sm text-white/50 mb-4">
+        Debug: totalTracks={totalTracks}, currentCount={currentCount}, showNumber={showNumber.toString()}
+      </div>
       
       {!showTeaser && (
         <motion.p
@@ -1831,6 +1844,7 @@ function App() {
     console.log('Calculating metrics for', tracks?.length || 0, 'tracks');
     metrics = useWrappedMetrics(tracks);
     console.log('Metrics calculated successfully:', metrics);
+    console.log('TotalTracks value:', metrics?.totalTracks, 'type:', typeof metrics?.totalTracks);
   } catch (err) {
     console.error('Error calculating metrics:', err);
     return <LoadingScreen error={`Error calculating metrics: ${err.message}`} />;
