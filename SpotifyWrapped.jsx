@@ -25,48 +25,26 @@ function AudioManager() {
 
   // Initialize audio with MP3 file
   useEffect(() => {
-    const initializeAudio = async () => {
+    const initializeAudio = () => {
       try {
-        // Try different path formats for different deployment environments
-        const audioSources = [
-          '/jazz-music-436634.mp3',
-          './jazz-music-436634.mp3',
-          'jazz-music-436634.mp3'
-        ];
+        // Use absolute path for better deployment compatibility
+        audioRef.current = new Audio('/jazz-music-436634.mp3');
+        audioRef.current.loop = true;
+        audioRef.current.volume = 0.3;
+        audioRef.current.preload = 'auto';
         
-        let audioLoaded = false;
+        console.log('Audio initialized successfully');
         
-        for (const src of audioSources) {
+        // Try to auto-start music after 3 seconds
+        const timer = setTimeout(async () => {
           try {
-            audioRef.current = new Audio(src);
-            audioRef.current.loop = true;
-            audioRef.current.volume = 0.3;
-            audioRef.current.preload = 'auto';
-            
-            // Test if the audio can load
-            await new Promise((resolve, reject) => {
-              audioRef.current.oncanplay = resolve;
-              audioRef.current.onerror = reject;
-              audioRef.current.load();
-            });
-            
-            audioLoaded = true;
-            break;
-          } catch (err) {
-            console.log(`Failed to load audio from ${src}:`, err);
+            await playMusic();
+          } catch (error) {
+            console.log('Auto-play failed, user interaction required');
           }
-        }
+        }, 3000);
         
-        if (audioLoaded) {
-          // Auto-start music after 2 seconds
-          const timer = setTimeout(() => {
-            playMusic();
-          }, 2000);
-          
-          return () => clearTimeout(timer);
-        } else {
-          console.log('All audio sources failed, music will not be available');
-        }
+        return () => clearTimeout(timer);
       } catch (error) {
         console.log('Audio initialization failed:', error);
       }
@@ -145,78 +123,12 @@ function AudioManager() {
   );
 }
 
-// Sound Effects Hook
+// Sound Effects Hook (DISABLED - using only MP3 background music)
 function useSoundEffects() {
-  const audioContextRef = useRef(null);
-
-  useEffect(() => {
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      audioContextRef.current = new AudioContext();
-    } catch (error) {
-      console.log('Web Audio API not supported:', error);
-    }
-  }, []);
-
-  const playSlideTransition = () => {
-    if (!audioContextRef.current) return;
-    
-    const oscillator = audioContextRef.current.createOscillator();
-    const gainNode = audioContextRef.current.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContextRef.current.destination);
-    
-    // Gentle jazz-like transition - soft brush sound
-    oscillator.frequency.setValueAtTime(600, audioContextRef.current.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(300, audioContextRef.current.currentTime + 0.2);
-    
-    gainNode.gain.setValueAtTime(0.02, audioContextRef.current.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContextRef.current.currentTime + 0.2);
-    
-    oscillator.start(audioContextRef.current.currentTime);
-    oscillator.stop(audioContextRef.current.currentTime + 0.2);
-  };
-
-  const playCounterSound = () => {
-    if (!audioContextRef.current) return;
-    
-    const oscillator = audioContextRef.current.createOscillator();
-    const gainNode = audioContextRef.current.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContextRef.current.destination);
-    
-    // Soft piano-like note
-    oscillator.frequency.setValueAtTime(880, audioContextRef.current.currentTime);
-    
-    gainNode.gain.setValueAtTime(0.01, audioContextRef.current.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContextRef.current.currentTime + 0.1);
-    
-    oscillator.start(audioContextRef.current.currentTime);
-    oscillator.stop(audioContextRef.current.currentTime + 0.1);
-  };
-
-  const playRevealSound = () => {
-    if (!audioContextRef.current) return;
-    
-    const oscillator = audioContextRef.current.createOscillator();
-    const gainNode = audioContextRef.current.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContextRef.current.destination);
-    
-    // Gentle jazz flourish - rising then settling
-    oscillator.frequency.setValueAtTime(330, audioContextRef.current.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(660, audioContextRef.current.currentTime + 0.2);
-    oscillator.frequency.exponentialRampToValueAtTime(440, audioContextRef.current.currentTime + 0.4);
-    
-    gainNode.gain.setValueAtTime(0.03, audioContextRef.current.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContextRef.current.currentTime + 0.4);
-    
-    oscillator.start(audioContextRef.current.currentTime);
-    oscillator.stop(audioContextRef.current.currentTime + 0.4);
-  };
+  // Disable all Web Audio API sounds to use only MP3 jazz music
+  const playSlideTransition = () => {}; // No sound
+  const playCounterSound = () => {}; // No sound  
+  const playRevealSound = () => {}; // No sound
 
   return {
     playSlideTransition,
