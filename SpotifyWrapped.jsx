@@ -917,10 +917,7 @@ function TotalTracksSlide({ totalTracks, onNext }) {
         )}
       </AnimatePresence>
       
-      {/* Debug display */}
-      <div className="text-sm text-white/50 mb-4">
-        Debug: totalTracks={totalTracks}, currentCount={currentCount}, showNumber={showNumber.toString()}
-      </div>
+
       
       {!showTeaser && (
         <motion.p
@@ -1227,32 +1224,32 @@ function NewVoicesSlide({ newVoices, onNext }) {
                 initial={{ y: 50, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.6, duration: 0.6 }}
-                className="max-w-2xl mx-auto"
+                className="max-w-4xl mx-auto"
               >
                 <p className="text-xl text-teal-200 mb-4">Welcome to the family:</p>
-                <div className="flex flex-wrap justify-center gap-3">
-                  {newVoices.slice(0, 8).map((user, index) => (
+                <div className="flex flex-wrap justify-center gap-3 max-h-60 overflow-y-auto">
+                  {newVoices.map((user, index) => (
                     <motion.div
                       key={user.id}
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      transition={{ delay: 0.8 + index * 0.1, duration: 0.4 }}
+                      transition={{ delay: 0.8 + (index * 0.05), duration: 0.4 }}
                       className="bg-teal-800/30 backdrop-blur-sm rounded-full px-4 py-2 border border-teal-400/30"
                     >
                       <span className="text-white font-medium">{user.name}</span>
                     </motion.div>
                   ))}
-                  {newVoices.length > 8 && (
-                    <motion.div
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ delay: 1.6, duration: 0.4 }}
-                      className="bg-teal-800/30 backdrop-blur-sm rounded-full px-4 py-2 border border-teal-400/30"
-                    >
-                      <span className="text-teal-300">+{newVoices.length - 8} more</span>
-                    </motion.div>
-                  )}
                 </div>
+                {newVoices.length > 15 && (
+                  <motion.p
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 2, duration: 0.6 }}
+                    className="text-sm text-teal-300 mt-4"
+                  >
+                    {newVoices.length} amazing new contributors! 🎉
+                  </motion.p>
+                )}
               </motion.div>
             )}
           </motion.div>
