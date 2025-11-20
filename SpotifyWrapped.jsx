@@ -35,16 +35,29 @@ function AudioManager() {
         
         console.log('Audio initialized successfully');
         
-        // Try to auto-start music after 3 seconds
-        const timer = setTimeout(async () => {
-          try {
-            await playMusic();
-          } catch (error) {
-            console.log('Auto-play failed, user interaction required');
-          }
-        }, 3000);
+        // Try immediate autoplay
+        playMusic();
         
-        return () => clearTimeout(timer);
+        // Also try after user interaction
+        const handleUserInteraction = () => {
+          if (!isPlaying) {
+            playMusic();
+          }
+          // Remove listeners after first interaction
+          document.removeEventListener('click', handleUserInteraction);
+          document.removeEventListener('keydown', handleUserInteraction);
+          document.removeEventListener('touchstart', handleUserInteraction);
+        };
+        
+        document.addEventListener('click', handleUserInteraction);
+        document.addEventListener('keydown', handleUserInteraction);
+        document.addEventListener('touchstart', handleUserInteraction);
+        
+        return () => {
+          document.removeEventListener('click', handleUserInteraction);
+          document.removeEventListener('keydown', handleUserInteraction);
+          document.removeEventListener('touchstart', handleUserInteraction);
+        };
       } catch (error) {
         console.log('Audio initialization failed:', error);
       }
@@ -63,12 +76,14 @@ function AudioManager() {
   const playMusic = async () => {
     if (audioRef.current && !isPlaying) {
       try {
+        // Set volume and ensure it's ready to play
+        audioRef.current.volume = 0.3;
         await audioRef.current.play();
         setIsPlaying(true);
+        console.log('Audio started playing successfully');
       } catch (error) {
-        console.log('Audio play failed (may require user interaction):', error);
-        // Audio play failed, likely due to browser autoplay policy
-        // The user will need to click the play button manually
+        console.log('Audio play failed (browser autoplay policy):', error);
+        // Will be retried on user interaction
       }
     }
   };
@@ -214,6 +229,18 @@ function getReleaseDecade(dateString) {
   const year = parseInt(dateString.substring(0, 4));
   const decade = Math.floor(year / 10) * 10;
   return `${decade}s`;
+}
+
+function getMoodDescription(mood) {
+  const descriptions = {
+    euphoric: "Pure joy and high energy define our collection! 🎉",
+    upbeat: "Positive vibes and good energy flow through our tracks! ⚡",
+    chill: "Relaxed and smooth - perfect for any time! 😌",
+    melancholic: "Deep emotions and introspective moments! 🌙",
+    intense: "Powerful and dramatic - full of passion! 🔥",
+    peaceful: "Calm and serene - music for the soul! 🕊️"
+  };
+  return descriptions[mood] || "A unique musical journey! 🎵";
 }
 
 // Custom hook for using enhanced data
@@ -481,6 +508,291 @@ function useWrappedMetrics(tracks) {
       };
     });
 
+    // AUDIO ANALYSIS FEATURES
+    // Energy Flow Timeline
+    const energyTimeline = filteredTracks.map(track => ({
+      date: new Date(track.added_at),
+      energy: track.track.audio_features?.energy || 0.5,
+      danceability: track.track.audio_features?.danceability || 0.5,
+      valence: track.track.audio_features?.valence || 0.5
+    })).sort((a, b) => a.date - b.date);
+
+    // Mood Spectrum Analysis
+    const moodCategories = {
+      euphoric: 0, // High valence, high energy
+      upbeat: 0, // High valence, medium energy
+      chill: 0, // Medium valence, low energy
+      melancholic: 0, // Low valence, low energy
+      intense: 0, // Low valence, high energy
+      peaceful: 0 // Medium valence, very low energy
+    };
+
+    let tracksWithAudioFeatures = 0;
+    filteredTracks.forEach(track => {
+      const audioFeatures = track.track.audio_features;
+      
+      if (audioFeatures && audioFeatures.valence !== null && audioFeatures.energy !== null) {
+        // Use actual audio features when available
+        const valence = audioFeatures.valence;
+        const energy = audioFeatures.energy;
+        
+        if (valence > 0.7 && energy > 0.7) moodCategories.euphoric++;
+        else if (valence > 0.6 && energy > 0.4) moodCategories.upbeat++;
+        else if (valence < 0.4 && energy > 0.6) moodCategories.intense++;
+        else if (valence < 0.4 && energy < 0.4) moodCategories.melancholic++;
+        else if (energy < 0.3) moodCategories.peaceful++;
+        else moodCategories.chill++;
+        
+        tracksWithAudioFeatures++;
+      } else {
+        // Fallback: categorize by genre, popularity, or release date patterns
+        const genres = track.track.artists[0]?.genres || [];
+        const popularity = track.track.popularity || 50;
+        const releaseYear = track.track.album?.release_date ? parseInt(track.track.album.release_date.substring(0, 4)) : 2020;
+        
+        // Genre-based mood classification
+        const genreString = genres.join(' ').toLowerCase();
+        if (genreString.includes('dance') || genreString.includes('electronic') || genreString.includes('house')) {
+          moodCategories.euphoric++;
+        } else if (genreString.includes('pop') || genreString.includes('afrobeat') || popularity > 70) {
+          moodCategories.upbeat++;
+        } else if (genreString.includes('blues') || genreString.includes('sad') || genreString.includes('melancholic')) {
+          moodCategories.melancholic++;
+        } else if (genreString.includes('rock') || genreString.includes('metal') || genreString.includes('punk')) {
+          moodCategories.intense++;
+        } else if (genreString.includes('ambient') || genreString.includes('classical') || genreString.includes('meditation')) {
+          moodCategories.peaceful++;
+        } else {
+          // Default based on era and popularity
+          if (releaseYear > 2020 && popularity > 60) moodCategories.upbeat++;
+          else if (releaseYear < 2000) moodCategories.melancholic++;
+          else moodCategories.chill++;
+        }
+      }
+    });
+
+    const dominantMood = Object.entries(moodCategories)
+      .reduce((max, [mood, count]) => count > max.count ? { mood, count } : max, { mood: 'chill', count: 0 });
+
+    // Key & Tempo Analysis
+    const keySignatures = {};
+    const tempoRanges = { slow: 0, medium: 0, fast: 0, veryFast: 0 };
+    let totalTempo = 0;
+    let tempoCount = 0;
+
+    filteredTracks.forEach(track => {
+      const key = track.track.audio_features?.key;
+      const tempo = track.track.audio_features?.tempo;
+      
+      if (key !== null && key !== undefined) {
+        const keyNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const keyName = keyNames[key] || 'Unknown';
+        keySignatures[keyName] = (keySignatures[keyName] || 0) + 1;
+      }
+      
+      if (tempo) {
+        totalTempo += tempo;
+        tempoCount++;
+        
+        if (tempo < 80) tempoRanges.slow++;
+        else if (tempo < 120) tempoRanges.medium++;
+        else if (tempo < 160) tempoRanges.fast++;
+        else tempoRanges.veryFast++;
+      }
+    });
+
+    const avgTempo = tempoCount > 0 ? Math.round(totalTempo / tempoCount) : 120;
+    const topKey = Object.entries(keySignatures)
+      .reduce((max, [key, count]) => count > max.count ? { key, count } : max, { key: 'C', count: 0 });
+
+    // Acousticness vs Energy Diversity
+    const diversityScore = filteredTracks.reduce((score, track) => {
+      const acousticness = track.track.audio_features?.acousticness || 0.5;
+      const energy = track.track.audio_features?.energy || 0.5;
+      return score + Math.abs(acousticness - energy);
+    }, 0) / filteredTracks.length;
+
+    // SOCIAL & COLLABORATION INSIGHTS
+    // Collaboration Patterns
+    const collaborationNetwork = {};
+    const sortedTracks = [...filteredTracks].sort((a, b) => new Date(a.added_at) - new Date(b.added_at));
+    
+    for (let i = 1; i < sortedTracks.length; i++) {
+      const prevUser = sortedTracks[i - 1].added_by.display_name;
+      const currentUser = sortedTracks[i].added_by.display_name;
+      
+      if (prevUser !== currentUser) {
+        if (!collaborationNetwork[prevUser]) collaborationNetwork[prevUser] = {};
+        collaborationNetwork[prevUser][currentUser] = (collaborationNetwork[prevUser][currentUser] || 0) + 1;
+      }
+    }
+
+    // Genre Influence Map
+    const genreIntroducers = {};
+    const seenGenres = new Set();
+    
+    sortedTracks.forEach(track => {
+      const user = track.added_by.display_name;
+      const genres = track.track.artists?.[0]?.genres || [];
+      
+      genres.forEach(genre => {
+        if (!seenGenres.has(genre)) {
+          seenGenres.add(genre);
+          genreIntroducers[user] = (genreIntroducers[user] || 0) + 1;
+        }
+      });
+    });
+
+    const topGenreIntroducer = Object.entries(genreIntroducers)
+      .reduce((max, [user, count]) => count > max.count ? { user, count } : max, { user: '', count: 0 });
+
+    // Response Time Analytics
+    const responseTimes = [];
+    for (let i = 1; i < sortedTracks.length; i++) {
+      const prevTime = new Date(sortedTracks[i - 1].added_at);
+      const currentTime = new Date(sortedTracks[i].added_at);
+      const timeDiff = (currentTime - prevTime) / (1000 * 60 * 60); // Hours
+      
+      if (timeDiff < 168) { // Less than a week
+        responseTimes.push({
+          user: sortedTracks[i].added_by.display_name,
+          responseTime: timeDiff
+        });
+      }
+    }
+
+    const avgResponseTime = responseTimes.length > 0 
+      ? responseTimes.reduce((sum, r) => sum + r.responseTime, 0) / responseTimes.length
+      : 0;
+
+    // STREAK TRACKING
+    const streaks = {};
+    let currentStreak = { user: '', count: 0, start: null, end: null };
+    let longestStreak = { user: '', count: 0, start: null, end: null };
+
+    sortedTracks.forEach((track, index) => {
+      const user = track.added_by.display_name;
+      
+      if (index === 0 || sortedTracks[index - 1].added_by.display_name !== user) {
+        // New streak
+        if (currentStreak.count > longestStreak.count) {
+          longestStreak = { ...currentStreak };
+        }
+        currentStreak = {
+          user,
+          count: 1,
+          start: new Date(track.added_at),
+          end: new Date(track.added_at)
+        };
+      } else {
+        // Continue streak
+        currentStreak.count++;
+        currentStreak.end = new Date(track.added_at);
+      }
+    });
+
+    // Check final streak
+    if (currentStreak.count > longestStreak.count) {
+      longestStreak = { ...currentStreak };
+    }
+
+    // ANNIVERSARY MOMENTS - Playlist Anniversary Celebrations
+    const anniversaryMoments = [];
+    
+    // Get the playlist creation date (first track ever added)
+    const allTracksForAnniversary = enhancedPlaylistDataRaw.default || enhancedPlaylistDataRaw || [];
+    if (allTracksForAnniversary.length > 0) {
+      const playlistCreated = new Date(allTracksForAnniversary[0].added_at);
+      const creationMonth = playlistCreated.getMonth();
+      const creationDay = playlistCreated.getDate();
+      
+      // Find tracks added on anniversary dates (same month/day) in our period
+      sortedTracks.forEach(track => {
+        const addedDate = new Date(track.added_at);
+        const addedMonth = addedDate.getMonth();
+        const addedDay = addedDate.getDate();
+        const addedYear = addedDate.getFullYear();
+        
+        // Check if this was added on an anniversary date
+        if (addedMonth === creationMonth && addedDay === creationDay && addedYear > playlistCreated.getFullYear()) {
+          const yearsOld = addedYear - playlistCreated.getFullYear();
+          anniversaryMoments.push({
+            type: 'anniversary',
+            yearsOld,
+            date: addedDate,
+            track: track.track.name,
+            artist: track.track.artists[0]?.name,
+            contributor: track.added_by.display_name,
+            description: `${yearsOld} year${yearsOld > 1 ? 's' : ''} anniversary celebration`
+          });
+        }
+      });
+      
+      // Also check for monthly anniversaries (same day of month as creation)
+      const monthlyAnniversaries = [];
+      sortedTracks.forEach(track => {
+        const addedDate = new Date(track.added_at);
+        if (addedDate.getDate() === creationDay && addedDate > playlistCreated) {
+          const monthsOld = (addedDate.getFullYear() - playlistCreated.getFullYear()) * 12 + 
+                           (addedDate.getMonth() - playlistCreated.getMonth());
+          
+          // Only include significant monthly milestones (6 months, 12 months, 18 months, etc.)
+          if (monthsOld > 0 && (monthsOld % 6 === 0 || monthsOld === 1 || monthsOld === 3)) {
+            monthlyAnniversaries.push({
+              type: 'monthly',
+              monthsOld,
+              date: addedDate,
+              track: track.track.name,
+              artist: track.track.artists[0]?.name,
+              contributor: track.added_by.display_name,
+              description: `${monthsOld} month${monthsOld > 1 ? 's' : ''} milestone`
+            });
+          }
+        }
+      });
+      
+      // Add the most significant monthly anniversaries
+      anniversaryMoments.push(...monthlyAnniversaries.slice(0, 3));
+    }
+    
+    // Sort by date
+    anniversaryMoments.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Playlist Evolution Story
+    const monthlyEvolution = {};
+    sortedTracks.forEach(track => {
+      const month = new Date(track.added_at).toISOString().slice(0, 7); // YYYY-MM
+      if (!monthlyEvolution[month]) {
+        monthlyEvolution[month] = {
+          genres: {},
+          avgValence: 0,
+          avgEnergy: 0,
+          trackCount: 0
+        };
+      }
+      
+      const monthData = monthlyEvolution[month];
+      monthData.trackCount++;
+      
+      // Add genres
+      const genres = track.track.artists?.[0]?.genres || [];
+      genres.forEach(genre => {
+        monthData.genres[genre] = (monthData.genres[genre] || 0) + 1;
+      });
+      
+      // Add audio features
+      const valence = track.track.audio_features?.valence || 0.5;
+      const energy = track.track.audio_features?.energy || 0.5;
+      monthData.avgValence += valence;
+      monthData.avgEnergy += energy;
+    });
+
+    // Normalize monthly averages
+    Object.values(monthlyEvolution).forEach(month => {
+      month.avgValence /= month.trackCount;
+      month.avgEnergy /= month.trackCount;
+    });
+
     return {
       totalTracks,
       totalMinutes: totalMinutesFormatted,
@@ -525,6 +837,34 @@ function useWrappedMetrics(tracks) {
         peakMonthCount: peakMonth.count,
         monthCounts
       },
+      
+      // Advanced Audio Analysis
+      audioAnalysis: {
+        energyTimeline,
+        moodSpectrum: {
+          dominantMood: dominantMood.mood,
+          moodCounts: moodCategories,
+          moodDescription: getMoodDescription(dominantMood.mood)
+        },
+        musicalProfile: {
+          topKey: topKey.key,
+          avgTempo,
+          tempoDistribution: tempoRanges,
+          diversityScore: Math.round(diversityScore * 100)
+        }
+      },
+      
+      // Social & Collaboration Insights
+      collaborationInsights: {
+        collaborationNetwork,
+        topGenreIntroducer,
+        avgResponseTime: Math.round(avgResponseTime * 10) / 10,
+        longestStreak,
+        anniversaryMoments
+      },
+      
+      // Playlist Evolution
+      playlistEvolution: monthlyEvolution,
       
       newVoices
     };
@@ -1222,6 +1562,269 @@ function NewVoicesSlide({ newVoices, onNext }) {
   );
 }
 
+function AudioAnalysisSlide({ audioAnalysis, onNext }) {
+  const [currentView, setCurrentView] = useState(0);
+  const views = ['mood', 'tempo', 'diversity'];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentView(prev => (prev + 1) % views.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 1.2 }}
+      transition={{ duration: 0.6 }}
+      className="h-screen w-screen bg-gradient-to-br from-purple-900 via-black to-pink-900 flex flex-col items-center justify-center p-8 text-center cursor-pointer"
+      onClick={onNext}
+    >
+      <motion.div
+        initial={{ y: -50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3, duration: 0.6 }}
+        className="mb-8"
+      >
+        <Music className="w-24 h-24 text-purple-400 mx-auto" />
+      </motion.div>
+      
+      <motion.h1
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.5, duration: 0.6 }}
+        className="text-4xl md:text-6xl font-bold text-white mb-6"
+      >
+        Audio DNA
+      </motion.h1>
+      
+      <AnimatePresence mode="wait">
+        {currentView === 0 && (
+          <motion.div
+            key="mood"
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            className="max-w-4xl mx-auto"
+          >
+            <motion.div className="text-6xl md:text-8xl font-black bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
+              {audioAnalysis.moodSpectrum.dominantMood.charAt(0).toUpperCase() + audioAnalysis.moodSpectrum.dominantMood.slice(1)}
+            </motion.div>
+            <p className="text-2xl text-purple-300 mb-6">
+              {audioAnalysis.moodSpectrum.moodDescription}
+            </p>
+            <div className="grid grid-cols-3 gap-4 mt-6">
+              {Object.entries(audioAnalysis.moodSpectrum.moodCounts)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 3)
+                .map(([mood, count], index) => (
+                <motion.div
+                  key={mood}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.8 + index * 0.1 }}
+                  className="bg-purple-800/30 rounded-lg p-4"
+                >
+                  <div className="text-lg font-bold text-white">{mood}</div>
+                  <div className="text-purple-300">{count} tracks</div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+        
+        {currentView === 1 && (
+          <motion.div
+            key="tempo"
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            className="max-w-4xl mx-auto"
+          >
+            <motion.div className="text-6xl md:text-8xl font-black bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
+              {audioAnalysis.musicalProfile.avgTempo} BPM
+            </motion.div>
+            <p className="text-2xl text-purple-300 mb-6">
+              Average tempo - Our playlist's heartbeat! 💓
+            </p>
+            <div className="text-lg text-purple-200 mb-4">
+              Most common key: <span className="font-bold text-white">{audioAnalysis.musicalProfile.topKey} Major</span>
+            </div>
+          </motion.div>
+        )}
+        
+        {currentView === 2 && (
+          <motion.div
+            key="diversity"
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            className="max-w-4xl mx-auto"
+          >
+            <motion.div className="text-6xl md:text-8xl font-black bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
+              {audioAnalysis.musicalProfile.diversityScore}%
+            </motion.div>
+            <p className="text-2xl text-purple-300 mb-6">
+              Musical diversity score - We love variety! 🌈
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function CollaborationSlide({ collaborationInsights, onNext }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 1.2 }}
+      transition={{ duration: 0.6 }}
+      className="h-screen w-screen bg-gradient-to-br from-orange-900 via-black to-red-900 flex flex-col items-center justify-center p-8 text-center cursor-pointer"
+      onClick={onNext}
+    >
+      <motion.div
+        initial={{ y: -50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3, duration: 0.6 }}
+        className="mb-8"
+      >
+        <Users className="w-24 h-24 text-orange-400 mx-auto" />
+      </motion.div>
+      
+      <motion.h1
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.5, duration: 0.6 }}
+        className="text-4xl md:text-6xl font-bold text-white mb-6"
+      >
+        Collaboration Champions
+      </motion.h1>
+      
+      <motion.div
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 0.7, duration: 0.8 }}
+        className="max-w-4xl mx-auto"
+      >
+        <div className="grid md:grid-cols-2 gap-8">
+          <motion.div
+            initial={{ x: -50, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ delay: 1, duration: 0.6 }}
+            className="bg-orange-800/30 rounded-lg p-6"
+          >
+            <div className="text-2xl font-bold text-orange-300 mb-2">🎵 Genre Pioneer</div>
+            <div className="text-4xl font-black text-white mb-2">{collaborationInsights.topGenreIntroducer.user}</div>
+            <div className="text-orange-200">Introduced {collaborationInsights.topGenreIntroducer.count} new genres!</div>
+          </motion.div>
+          
+          <motion.div
+            initial={{ x: 50, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ delay: 1.2, duration: 0.6 }}
+            className="bg-red-800/30 rounded-lg p-6"
+          >
+            <div className="text-2xl font-bold text-red-300 mb-2">⚡ Speed Demon</div>
+            <div className="text-4xl font-black text-white mb-2">{collaborationInsights.longestStreak.user}</div>
+            <div className="text-red-200">Longest streak: {collaborationInsights.longestStreak.count} songs in a row!</div>
+          </motion.div>
+        </div>
+        
+        {collaborationInsights.avgResponseTime > 0 && (
+          <motion.div
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 1.4, duration: 0.6 }}
+            className="mt-8 text-xl text-orange-200"
+          >
+            Average response time: <span className="font-bold text-white">{collaborationInsights.avgResponseTime} hours</span> between additions
+          </motion.div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function AnniversarySlide({ anniversaryMoments, onNext }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 1.2 }}
+      transition={{ duration: 0.6 }}
+      className="h-screen w-screen bg-gradient-to-br from-yellow-900 via-black to-amber-900 flex flex-col items-center justify-center p-8 text-center cursor-pointer"
+      onClick={onNext}
+    >
+      <motion.div
+        initial={{ y: -50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3, duration: 0.6 }}
+        className="mb-8"
+      >
+        <Trophy className="w-24 h-24 text-yellow-400 mx-auto" />
+      </motion.div>
+      
+      <motion.h1
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.5, duration: 0.6 }}
+        className="text-4xl md:text-6xl font-bold text-white mb-6"
+      >
+        Anniversary Celebrations
+      </motion.h1>
+      
+      {anniversaryMoments.length > 0 ? (
+        <motion.div
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.7, duration: 0.8 }}
+          className="max-w-4xl mx-auto"
+        >
+          <div className="grid gap-6 max-h-96 overflow-y-auto">
+            {anniversaryMoments.slice(0, 4).map((moment, index) => (
+              <motion.div
+                key={`${moment.type}-${moment.date}`}
+                initial={{ x: -50, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ delay: 0.9 + index * 0.1, duration: 0.6 }}
+                className="bg-yellow-800/30 rounded-lg p-4 text-left"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-2xl font-bold text-yellow-400">
+                      {moment.type === 'anniversary' ? `🎂 ${moment.yearsOld} Year${moment.yearsOld > 1 ? 's' : ''}` : 
+                       moment.type === 'monthly' ? `📅 ${moment.monthsOld} Month${moment.monthsOld > 1 ? 's' : ''}` : 
+                       `🎵 ${moment.description}`}
+                    </div>
+                    <div className="text-lg text-white">"{moment.track}" by {moment.artist}</div>
+                    <div className="text-yellow-200">Added by {moment.contributor} on this special day!</div>
+                  </div>
+                  <div className="text-right text-yellow-300">
+                    {new Date(moment.date).toLocaleDateString()}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.7, duration: 0.6 }}
+          className="text-2xl text-yellow-300"
+        >
+          No anniversary celebrations happened during this period, but we're building memories! 🎵
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
 function GenreSlide({ genreAnalysis, onNext }) {
   return (
     <motion.div
@@ -1817,11 +2420,14 @@ function App() {
     { component: TopContributorSlide, props: { topContributor: metrics.topContributor } },
     { component: TopArtistSlide, props: { topArtist: metrics.topArtist } },
     { component: NewVoicesSlide, props: { newVoices: metrics.newVoices } },
+    { component: AudioAnalysisSlide, props: { audioAnalysis: metrics.audioAnalysis } },
     { component: GenreSlide, props: { genreAnalysis: metrics.genreAnalysis } },
     { component: TimeAnalysisSlide, props: { timeAnalysis: metrics.timeAnalysis } },
     { component: PopularitySlide, props: { popularityAnalysis: metrics.popularityAnalysis } },
+    { component: CollaborationSlide, props: { collaborationInsights: metrics.collaborationInsights } },
     { component: DecadeSlide, props: { decadeAnalysis: metrics.decadeAnalysis } },
     { component: MonthlyTrendsSlide, props: { monthlyBreakdown: metrics.monthlyBreakdown } },
+    { component: AnniversarySlide, props: { anniversaryMoments: metrics.collaborationInsights?.anniversaryMoments || [] } },
     { component: AwardsSlide, props: { firstToParty: metrics.firstToParty, lastMinuteMVP: metrics.lastMinuteMVP, metrics: metrics } },
     { component: FinalSlide, props: { metrics } }
   ];
